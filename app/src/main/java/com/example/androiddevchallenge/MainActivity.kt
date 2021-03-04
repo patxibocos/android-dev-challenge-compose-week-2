@@ -19,6 +19,8 @@ import android.os.Bundle
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateIntAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,6 +35,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.Button
+import androidx.compose.material.ButtonDefaults
 import androidx.compose.material.CircularProgressIndicator
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Surface
@@ -42,6 +45,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.LiveData
@@ -56,11 +60,10 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 
-sealed class State(val seconds: Int) {
+sealed class State(val total: Int) {
     class Stopped(seconds: Int = 0) : State(seconds)
 
-    //    class Started(seconds: Int) : State(seconds)
-    class Countdown(seconds: Int) : State(seconds)
+    class Countdown(total: Int, val seconds: Int) : State(total)
 }
 
 class MainViewModel : ViewModel() {
@@ -73,18 +76,18 @@ class MainViewModel : ViewModel() {
         if (currentState !is State.Stopped) {
             return
         }
-        val seconds = currentState.seconds
+        val seconds = currentState.total
         if (seconds <= 0) {
             return
         }
 //        _state.value = State.Started(seconds)
-        _state.value = State.Countdown(seconds)
+        _state.value = State.Countdown(seconds, seconds)
         this.currentTimer = viewModelScope.launch {
             timer(seconds).collect {
                 _state.value = if (it == 0) {
                     State.Stopped(0)
                 } else {
-                    State.Countdown(it)
+                    State.Countdown(seconds, it)
                 }
             }
         }
@@ -100,7 +103,7 @@ class MainViewModel : ViewModel() {
         if (currentState !is State.Stopped) {
             return
         }
-        _state.value = State.Stopped(currentState.seconds + 1)
+        _state.value = State.Stopped(currentState.total + 1)
     }
 
     fun decrementSecond() {
@@ -108,10 +111,10 @@ class MainViewModel : ViewModel() {
         if (currentState !is State.Stopped) {
             return
         }
-        if (currentState.seconds <= 0) {
+        if (currentState.total <= 0) {
             return
         }
-        _state.value = State.Stopped(currentState.seconds - 1)
+        _state.value = State.Stopped(currentState.total - 1)
     }
 }
 
@@ -161,23 +164,42 @@ fun Timer(
     secondsIncremented: () -> Unit = {},
     secondsDecremented: () -> Unit = {},
 ) {
+    val sizes = listOf(
+        MaterialTheme.typography.h3,
+        MaterialTheme.typography.h2,
+        MaterialTheme.typography.h1
+    )
+    val styleIndex by animateIntAsState(targetValue = state.total % sizes.size)
     Box(contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             when (state) {
                 is State.Countdown -> {
-                    Text(
-                        text = "${state.seconds}",
-                        style = MaterialTheme.typography.h1
-                    )
-                    Button(
-                        onClick = { timerStopped() },
-                        shape = CircleShape
-                    ) {
-                        Text("Stop")
+                    val ratio = state.seconds / state.total.toFloat()
+                    val alpha by animateFloatAsState(targetValue = ratio)
+                    Box(contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(
+                            modifier = Modifier
+                                .size(300.dp)
+                                .alpha(1 - alpha),
+                            progress = state.seconds / state.total.toFloat(),
+                        )
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = "${state.seconds}",
+                                style = sizes[styleIndex],
+                            )
+                            Button(
+                                onClick = { timerStopped() },
+                                shape = CircleShape,
+                                colors = ButtonDefaults.buttonColors(backgroundColor = MaterialTheme.colors.error),
+                                modifier = Modifier.padding(top = 30.dp)
+                            ) {
+                                Text(text = "Stop")
+                            }
+                        }
                     }
                 }
                 is State.Stopped -> {
-                    CircularProgressIndicator(progress = .3f)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Button(
                             onClick = { secondsDecremented() },
@@ -193,8 +215,8 @@ fun Timer(
                             )
                         }
                         Text(
-                            text = "${state.seconds}",
-                            style = MaterialTheme.typography.h1,
+                            text = "${state.total}",
+                            style = sizes[styleIndex],
                             modifier = Modifier.padding(start = 30.dp, end = 30.dp)
                         )
                         Button(
@@ -225,7 +247,8 @@ fun Timer(
                     Button(
                         onClick = { timerStarted() },
                         shape = CircleShape,
-                        enabled = state.seconds > 0
+                        enabled = state.total > 0,
+                        modifier = Modifier.padding(top = 30.dp)
                     ) {
                         Text(text = "GO!")
                     }
@@ -247,7 +270,7 @@ fun LightPreview() {
 @Composable
 fun DarkPreview() {
     MyTheme(darkTheme = true) {
-        MyApp(State.Countdown(5))
+        MyApp(State.Countdown(5, 5))
     }
 }
 
